@@ -1,0 +1,19 @@
+setup:
+	u venv --python 3.10
+	u pip install -e .
+
+run:
+	u run streamlit run src/streamlit_network_explorer/app.py
+
+test:
+	u run pytest -q
+
+lint:
+	u run ruff check src tests
+
+fmt:
+	u run ruff check --fix src tests
+	u run black src tests
+
+precommit:
+	u run pre-commit install

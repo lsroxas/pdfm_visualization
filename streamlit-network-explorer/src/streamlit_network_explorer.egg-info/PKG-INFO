@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: streamlit-network-explorer
+Version: 0.1.0
+Summary: Streamlit app to explore large graphs (~1700 nodes) with click-to-inspect and neighbor highlighting.
+Author-email: Your Name <you@example.com>
+License: MIT
+Requires-Python: <3.11,>=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: streamlit>=1.36
+Requires-Dist: streamlit-agraph>=0.0.45
+Requires-Dist: networkx>=3.2
+Requires-Dist: pandas>=2.2
+Requires-Dist: pyarrow>=16.0
+Requires-Dist: xlsxwriter>=3.2
+Requires-Dist: pytest>=8.0
+Requires-Dist: pre-commit>=3.7
+Requires-Dist: ruff>=0.5
+
+# Streamlit Network Explorer\n\nVisualize ~1,700-node graphs, click nodes for details, and highlight neighbors.\n

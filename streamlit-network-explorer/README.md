@@ -1,0 +1,1 @@
+# Streamlit Network Explorer\n\nVisualize ~1,700-node graphs, click nodes for details, and highlight neighbors.\n

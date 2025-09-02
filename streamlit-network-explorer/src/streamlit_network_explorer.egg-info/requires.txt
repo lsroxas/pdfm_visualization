@@ -1,0 +1,9 @@
+streamlit>=1.36
+streamlit-agraph>=0.0.45
+networkx>=3.2
+pandas>=2.2
+pyarrow>=16.0
+xlsxwriter>=3.2
+pytest>=8.0
+pre-commit>=3.7
+ruff>=0.5
