@@ -78,3 +78,44 @@ def tips_footer():
             "- Choose a layout algorithm (spring/kamada-kawai/FR) for deterministic positions."
             "- Precompute and save positions if you need cross-session consistency."
         )
+
+# src/streamlit_network_explorer/ui_components.py
+
+def _swatch_html(color_hex: str) -> str:
+    return (
+        f'<span style="display:inline-block;width:12px;height:12px;'
+        f'border-radius:2px;background:{color_hex};'
+        f'margin-right:6px;border:1px solid #999"></span>'
+    )
+
+def graph_legend(
+    node_style: dict,
+    edge_style: dict,
+    palette: dict,
+    selected_node_color_hex: str,
+    neighbor_node_color_hex: str,
+):
+    """Render a collapsible legend for the Graph (agraph) view.
+    Accepts node_style entries like {"type": {"color": "#HEX"}} and
+    edge_style entries as either {"type": {"color": "#HEX"}} OR {"type": "#HEX"}.
+    """
+    with st.expander("Legend", expanded=False):
+        st.markdown("### Node types", unsafe_allow_html=True)
+        for ntype, sty in node_style.items():
+            if ntype == "default":
+                continue
+            color_hex = sty["color"] if isinstance(sty, dict) else str(sty)
+            st.markdown(_swatch_html(color_hex) + ntype, unsafe_allow_html=True)
+
+        st.markdown("### Edge types", unsafe_allow_html=True)
+        for etype, sty in edge_style.items():
+            if etype == "default":
+                continue
+            color_hex = sty["color"] if isinstance(sty, dict) else str(sty)
+            st.markdown(_swatch_html(color_hex) + etype, unsafe_allow_html=True)
+
+        # st.markdown("### Highlights", unsafe_allow_html=True)
+        # st.markdown(_swatch_html(selected_node_color_hex) + "Selected node", unsafe_allow_html=True)
+        # st.markdown(_swatch_html(neighbor_node_color_hex) + "Neighbor nodes", unsafe_allow_html=True)
+        # st.markdown(_swatch_html(palette.get("edge_highlight", "#ff7f0e")) + "Highlighted edges", unsafe_allow_html=True)
+        # st.markdown(_swatch_html(palette.get("edge", "#bbbbbb")) + "Default edges", unsafe_allow_html=True)

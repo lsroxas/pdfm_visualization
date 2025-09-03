@@ -1,4 +1,5 @@
-source,target,weight
-MNL,CEB,1
-CEB,DVO,1
-MNL,DVO,1
+source,target,type
+MNL,CEB,similarity
+CEB,DVO,proximity
+MNL,DVO,ownership
+PNG,MNL,similarity
