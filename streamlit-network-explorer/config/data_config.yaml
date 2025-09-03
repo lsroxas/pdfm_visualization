@@ -10,6 +10,19 @@ data:
     tier_col: tier
     population_col: population_2024
     type_col: location_type
+
+    attribute_groups:
+      - name: "Points of Interests"
+        columns: ['count_711', 'mercury_count', 'watsons_total_count']
+      - name: "Amenities"
+        columns: ['amenity_count','amenity_density_scaled','amenity_proximity_scaled','amenity_entropy_scaled','amenity_equity_scaled', 'shop','restaurant','school','bank','fast_food','place_of_worship','fuel','pharmacy','cafe','parking','townhall','bar','police','atm','community_centre','bus_station','clinic','sport','shelter','toilets','hospital','post_office','bench','public_building','college','marketplace','kindergarten','fire_station','dentist','car_wash']
+      - name: "Busyness"
+        columns: ['Avg Clustering','Degree Centrality','Group Closeness Centrality', 'ntl_mean', 'ntl_median', 'ntl_min', 'ntl_max', 'ntl_std', 'ntl_sum', 'px_count', 'ntl_p10', 'ntl_p90', 'bright_frac', 'moderate_frac', 'dark_frac', 'ntl_gini', 'ntl_skew', 'ntl_kurtosis']
+      - name: "Healthcare Facilities"
+        columns: ['BHC_Count','Government_BedCount','Private_BedCount','Government_DialysisCenterCount','Private_DialysisCenterCount','Government_CancerCenterCount','Private_CancerCenterCount','Government_KTCenterCount','Private_KTCenterCount','Government_PsychCenterCount','Private_PsychCenterCount']
+      - name: "Healthcare Providers"
+        columns: ['PHAEST01','PHAEST02', 'PHCARD01','PHDIAB01','PHDIAB01','PHEMEMED01','PHENTS01','PHGENE01','PHGENE02','PHGENE03','PHGENE04','PHGENP01','PHINTM01','PHINTM02','PHOBGN01','PHORTS01','PHPEDI01','PHRANES01','PHREHAB01','PHRENDO01','PHRENDO01','PHRGAST01','PHRGAST02','PHRINFD01','PHRINFD02','PHRNEPH01','PHRNEUR01','PHRNEUR02','PHROCCU01','PHRONCO01','PHRONCO02','PHRONCO03','PHRPSYC02','PHRRHEU01','PHRUROL01']
+
   edges:
     # path: data/all_edges.csv
     path: data/all_edges.csv

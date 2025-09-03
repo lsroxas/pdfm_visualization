@@ -56,5 +56,7 @@ def main():
             edge_types_filter=edge_types,   
         )
 
+        # Full attributes pane under the map
+        ui_components.full_node_record_grouped_from_csv(cfg, state.get_selected_node())
 if __name__ == "__main__":
     main()

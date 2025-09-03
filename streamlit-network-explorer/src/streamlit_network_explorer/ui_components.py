@@ -6,6 +6,10 @@ import pandas as pd
 # For details pane
 from typing import Any, Dict, Iterable, Tuple, List
 
+#For additional details
+from typing import Optional
+
+
 def header(title: str, subtitle: str | None = None):
     st.title(title)
     if subtitle:
@@ -159,3 +163,156 @@ def filters_panel(
     )
 
     return picked_nodes, picked_edges
+
+def full_node_record_panel(nodes_df: pd.DataFrame, selected_id: Optional[str]) -> None:
+    """Show every column/value for the selected node as a neat table."""
+    st.markdown("#### Node attributes")
+
+    if not selected_id:
+        st.info("Pick a node to view all attributes.")
+        return
+
+    row = nodes_df.loc[nodes_df["id"].astype(str) == str(selected_id)]
+    if row.empty:
+        st.warning("Selected node not found in current data/filters.")
+        return
+
+    r = row.iloc[0]
+
+    # Put commonly useful fields first (if they exist), then the rest
+    preferred = ["id", "location_name", "province", "location_type", "tier", "population", "lat", "lon"]
+    cols_present = list(r.index)
+    ordered = [c for c in preferred if c in cols_present] + [c for c in cols_present if c not in preferred]
+
+    # Build a (Field, Value) table
+    df = pd.DataFrame({"Field": ordered, "Value": [r[c] for c in ordered]})
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+
+@st.cache_data(show_spinner=False)
+def _load_nodes_raw_csv(nodes_cfg: Dict) -> pd.DataFrame:
+    """Load the raw nodes CSV as-is, without renaming columns."""
+    path = nodes_cfg.get("path", "data/nodes.csv")
+    delim = nodes_cfg.get("delimiter", ",")
+    df = pd.read_csv(path, delimiter=delim)
+    return df
+
+def full_node_record_from_csv(cfg: Dict, selected_id: Optional[str]) -> None:
+    """
+    Show every column/value for the selected node by looking it up in the *raw*
+    nodes CSV using the configured id column (e.g., 'location_id').
+    """
+    st.markdown("#### Node attributes per modality")
+
+    if not selected_id:
+        st.info("Pick a node to view all attributes from the CSV.")
+        return
+
+    nodes_cfg = (cfg or {}).get("data", {}).get("nodes", {})
+    if not nodes_cfg:
+        st.error("Invalid config: missing data.nodes in data_config.yaml")
+        return
+
+    id_col = nodes_cfg.get("id_col", "location_id")  # default to 'location_id'
+    df = _load_nodes_raw_csv(nodes_cfg)
+
+    if id_col not in df.columns:
+        st.error(f"The configured id_col '{id_col}' was not found in the nodes CSV.")
+        return
+
+    # Lookup by id (string-compare to be safe)
+    m = df[id_col].astype(str) == str(selected_id)
+    row = df.loc[m]
+    if row.empty:
+        st.warning(f"No row found in nodes CSV where {id_col} == {selected_id!r}.")
+        return
+
+    r = row.iloc[0]
+
+    # Build a tidy Field/Value table (preferred fields first if present)
+    preferred = [
+        id_col, "location_name", "province", "location_type", "tier", "population",
+        "latitude", "longitude", "lat", "lon",
+    ]
+    cols_present = list(r.index)
+    ordered = [c for c in preferred if c in cols_present] + [c for c in cols_present if c not in preferred]
+
+    table = pd.DataFrame({"Field": ordered, "Value": [r[c] for c in ordered]})
+    st.dataframe(table, hide_index=True, use_container_width=True)
+
+
+@st.cache_data(show_spinner=False)
+def _load_nodes_raw_csv(nodes_cfg: Dict) -> pd.DataFrame:
+    """Load the raw nodes CSV as-is, without renaming columns."""
+    path = nodes_cfg.get("path", "data/nodes.csv")
+    delim = nodes_cfg.get("delimiter", ",")
+    return pd.read_csv(path, delimiter=delim)
+
+def _field_value_df(row: pd.Series, columns: List[str]) -> pd.DataFrame:
+    """Build a (Field, Value) DataFrame for the subset of columns that exist."""
+    cols = [c for c in columns if c in row.index]
+    if not cols:
+        return pd.DataFrame({"Field": [], "Value": []})
+    return pd.DataFrame({"Field": cols, "Value": [row[c] for c in cols]})
+
+def full_node_record_grouped_from_csv(cfg: Dict, selected_id: Optional[str]) -> None:
+    """
+    Show all columns for the selected node, grouped by 'attribute_groups' from data_config.yaml.
+    Each group is collapsible. Any remaining columns appear under 'Other'.
+    """
+    st.markdown("#### Node attributes")
+
+    if not selected_id:
+        st.info("Pick a node to view grouped attributes.")
+        return
+
+    nodes_cfg = (cfg or {}).get("data", {}).get("nodes", {})
+    if not nodes_cfg:
+        st.error("Invalid config: missing data.nodes in data_config.yaml")
+        return
+
+    id_col = nodes_cfg.get("id_col", "location_id")
+    groups_cfg = nodes_cfg.get("attribute_groups", [])
+
+    # Load raw CSV and find the row
+    df = _load_nodes_raw_csv(nodes_cfg)
+    if id_col not in df.columns:
+        st.error(f"The configured id_col '{id_col}' was not found in the nodes CSV.")
+        return
+
+    row = df.loc[df[id_col].astype(str) == str(selected_id)]
+    if row.empty:
+        st.warning(f"No row found in nodes CSV where {id_col} == {selected_id!r}.")
+        return
+    r = row.iloc[0]
+
+    # Track which columns we’ve displayed
+    displayed: set[str] = set()
+
+    # Render defined groups in order
+    if isinstance(groups_cfg, dict):
+        # also support dict form: {GroupName: [col1, col2, ...]}
+        groups_iter = [{"name": k, "columns": v} for k, v in groups_cfg.items()]
+    else:
+        groups_iter = groups_cfg  # assume list of {name, columns}
+
+    for g in groups_iter:
+        name = str(g.get("name", "Group"))
+        cols = list(g.get("columns", []))
+        tbl = _field_value_df(r, cols)
+        displayed.update([c for c in cols if c in r.index])
+
+        with st.expander(name, expanded=False):
+            if tbl.empty:
+                st.caption("No fields from this group are present in the CSV.")
+            else:
+                st.dataframe(tbl, hide_index=True, use_container_width=True)
+
+    # Any columns not covered by groups appear under "Other"
+    remaining_cols = [c for c in r.index if c not in displayed]
+    # Optional: hide pandas index-ish columns if present
+    remaining_cols = [c for c in remaining_cols if c not in ("Unnamed: 0",)]
+
+    if remaining_cols:
+        with st.expander("Other", expanded=False):
+            st.dataframe(_field_value_df(r, remaining_cols), hide_index=True, use_container_width=True)
