@@ -1,5 +1,4 @@
-id,label,lat,lon,type
-MNL,Manila,14.5995,120.9842,municipality
-CEB,Cebu,10.3157,123.8854,municipality
-DVO,Davao,7.1907,125.4553,municipality
-PNG,Pangasinan,15.99950384,120.3125921,province
+id,label,lat,lon
+MNL,Manila,14.5995,120.9842
+CEB,Cebu,10.3157,123.8854
+DVO,Davao,7.1907,125.4553

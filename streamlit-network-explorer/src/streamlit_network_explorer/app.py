@@ -36,56 +36,31 @@ def main():
 
     tabs = st.tabs(["Map", "Graph"])
 
-    with tabs[1]:
-        col_graph, col_legend = st.columns([4, 1], gap="large")
-
-        # with col_graph:
-            # nodes, edges = graph_logic.to_agraph(
-            #     G,
-            #     selected=selected_node,
-            #     hops=opts.hops,
-            #     size_map_attr=opts.size_map_attr,
-            #     # size_map_attr=None
-            #     palette=styles.palette(),
-            #     # lock_layout=opts.lock_layout,
-            #     # layout_algo=opts.layout_algo,
-            # )
-            # selection = ui_components.graph_area(nodes, edges, opts)
-            # if isinstance(selection, dict) and selection.get("type") == "node":
-            #     state.set_selected_node(selection.get("id"))
-        
-        with col_legend:
-            # Legend for Graph View
-            from streamlit_network_explorer.graph_logic import (
-                TYPE_STYLE_GRAPH,
-                EDGE_STYLE_GRAPH,
-                SELECTED_COLOR_HEX,
-                NEIGHBOR_COLOR_HEX,
-            )
-            ui_components.graph_legend(
-                node_style=TYPE_STYLE_GRAPH,
-                edge_style=EDGE_STYLE_GRAPH,
-                palette=styles.palette(),
-                selected_node_color_hex=SELECTED_COLOR_HEX,
-                neighbor_node_color_hex=NEIGHBOR_COLOR_HEX,
-            )
-
     with tabs[0]:
-        from streamlit_network_explorer.map_view import render_map, render_legend
-        col_map, col_legend = st.columns([4, 1], gap="large")
-        
-        with col_map:
-            render_map(
-                G,
-                selected=state.get_selected_node(),
-                hops=opts.hops,
-                height=opts.canvas_height,
-                initial_zoom=5.0,
-                philippines_center=(12.8797, 121.7740),
-            )
-        
-        with col_legend:
-            render_legend()
+        nodes, edges = graph_logic.to_agraph(
+            G,
+            selected=selected_node,
+            hops=opts.hops,
+            size_map_attr=opts.size_map_attr,
+            # size_map_attr=None
+            palette=styles.palette(),
+            # lock_layout=opts.lock_layout,
+            # layout_algo=opts.layout_algo,
+        )
+        selection = ui_components.graph_area(nodes, edges, opts)
+        if isinstance(selection, dict) and selection.get("type") == "node":
+            state.set_selected_node(selection.get("id"))
+
+    with tabs[1]:
+        from streamlit_network_explorer.map_view import render_map
+        render_map(
+            G,
+            selected=state.get_selected_node(),
+            hops=opts.hops,
+            height=opts.canvas_height,
+            initial_zoom=5.0,
+            philippines_center=(12.8797, 121.7740),
+        )
 
 
     # ui_components.tips_footer()

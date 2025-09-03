@@ -16,29 +16,6 @@ from streamlit_deckgl import st_deckgl
 _LAT_KEYS = ("lat", "latitude", "y")
 _LON_KEYS = ("lon", "long", "lng", "longitude", "x")
 
-# Type styles: base radius (meters) and color [R,G,B,A]
-TYPE_STYLE = {
-    "province": {"radius": 10, "color": [220, 68, 55, 220]},      # red-ish
-    "municipality": {"radius": 5, "color": [180, 180, 180, 180]},   # grey
-    "default": {"radius": 5, "color": [255, 127, 14, 240]},   # orange
-}
-
-# Optional highlight overrides (selected/neighbor)
-SELECTED_COLOR = [255, 127, 14, 240]   # orange
-NEIGHBOR_COLOR = [31, 119, 180, 220]   # blue
-SELECTED_BOOST  = 6                    # +meters for selected
-NEIGHBOR_BOOST  = 3
-
-# Edge styles by type (MAP view)
-EDGE_STYLE = {
-    "proximity": {"color": [136, 136, 136, 160], "width": 1.0},  # gray
-    "ownership": {"color": [41, 41, 41, 160], "width": 1.0},     # blue
-    "similarity": {"color": [148, 103, 189, 160], "width": 1.0}, # purple
-    "default": {"color": [255, 170, 0, 160], "width": 1.0},      # fallback
-}
-
-EDGE_HIGHLIGHT_WIDTH = 2.5
-
 def _get_first(attrs: Dict, keys: Iterable[str]):
     for k in keys:
         if k in attrs and attrs[k] not in (None, ""):
@@ -71,37 +48,16 @@ def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int):
         lon, lat = _extract_lon_lat(a)
         if lon is None or lat is None:
             continue
-
-        node_type = str(a.get("type", "default")).lower()
-        base = TYPE_STYLE.get(node_type, TYPE_STYLE["default"])
-        radius = float(base["radius"])
-        fill   = list(base["color"])
-
-        is_sel = (str(n) == str(selected))
-        is_hi  = (selected is not None and n in hi and not is_sel)
-
-        # Highlight/selection overrides
-        if is_sel:
-            fill = SELECTED_COLOR
-            radius += SELECTED_BOOST
-        elif is_hi:
-            fill = NEIGHBOR_COLOR
-            radius += NEIGHBOR_BOOST
-
         nodes.append({
             "id": str(n),
             "label": a.get("label", str(n)),
-            "type": node_type,
             "lon": lon,
             "lat": lat,
             "deg": int(G.degree(n)),
-            "sel": is_sel,
-            "hi": is_hi,
-            "radius": radius,   # <-- computed here
-            "fill": fill,       # <-- computed here
-            **{k: v for k, v in a.items() if k not in ("lat","lon","long")},
+            "sel": (str(n) == str(selected)),
+            "hi": (selected is not None and n in hi),
+            **{k: v for k, v in a.items() if k.lower() not in set(_LAT_KEYS + _LON_KEYS)},
         })
-
     ndf = pd.DataFrame(nodes)
 
     edges = []
@@ -111,18 +67,11 @@ def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int):
         lon2, lat2 = _extract_lon_lat(av)
         if None in (lon1, lat1, lon2, lat2):
             continue
-
-        etype = str(e.get("type", "default")).lower()
-        estyle = EDGE_STYLE.get(etype, EDGE_STYLE["default"])
-
         edges.append({
             "source": str(u), "target": str(v),
             "lon1": lon1, "lat1": lat1,
             "lon2": lon2, "lat2": lat2,
             "weight": e.get("weight", 1),
-            "type": etype,
-            "base_color": estyle["color"],
-            "base_width": estyle["width"],
             "hi": (selected is not None and (u in hi or v in hi)),
         })
     edf = pd.DataFrame(edges)
@@ -188,14 +137,9 @@ def render_map(
         data=edges_df,
         get_source_position='[lon1, lat1]',
         get_target_position='[lon2, lat2]',
-        get_width="hi ? highlight_width : base_width",
-        get_color="hi ? highlight_color : base_color",
-        parameters={
-            "highlight_width": EDGE_HIGHLIGHT_WIDTH,
-            # "highlight_color": EDGE_HIGHLIGHT_COLOR,
-        },
+        get_width="hi ? 2.5 : 0.5",
+        get_color="hi ? [255,127,14,180] : [180,180,180,100]",
         pickable=False,
-        auto_highlight=True,
     )
 
     node_layer = pdk.Layer(
@@ -203,10 +147,10 @@ def render_map(
         id="nodes",                    # important for selection extraction
         data=nodes_df,
         get_position='[lon, lat]',
-        get_radius="radius",
+        get_radius="sel ? 100 : hi ? 80 : 55",
         radius_units="meters",
-        get_fill_color="fill",
-        get_line_color="[255,255,255,200]",
+        get_fill_color="sel ? [255,127,14,220] : hi ? [31,119,180,220] : [180,180,180,160]",
+        get_line_color="[255,255,255,240]",
         line_width_min_pixels=1,
         pickable=True,                 # must be True to receive click events
         auto_highlight=True,
@@ -238,54 +182,4 @@ def render_map(
             tooltip={"html": "<b>{label}</b><br/>Degree: {deg}<br/>ID: {id}", "style": {"color": "white"}},
         )
 
-    # --- Render with true click events via streamlit-deckgl ---
-    value = st_deckgl(
-        r,                      # <-- must be a pydeck.Deck, not a dict
-        height=height,
-        key="deck_map",
-        events=["click"],       # capture clicks on pickable layers
-    )
-
-    # Extract clicked object -> update global selected node -> rerun
-    info = (value or {}).get("info") or {}
-    obj = info.get("object") if isinstance(info, dict) else None
-    if obj:
-        # nodes_df rows come back as the object; sometimes wrapped in 'properties'
-        nid = str(
-            obj.get("id")
-            or (obj.get("properties") or {}).get("id")
-        )
-        if nid:
-            from streamlit_network_explorer import state as app_state
-            if app_state.get_selected_node() != nid:
-                app_state.set_selected_node(nid)
-                st.rerun()
-
-def render_legend():
-    """Legend for Map view: node types + edge types."""
-    with st.expander("Legend", expanded=True):
-        st.markdown("### Node types")
-        for ntype, sty in TYPE_STYLE.items():
-            if ntype == "default":
-                continue
-            rgba = sty["color"]
-            swatch = f"background: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]/255:.2f});"
-            st.markdown(
-                f'<span style="display:inline-block;width:12px;height:12px;'
-                f'border-radius:2px;margin-right:8px;border:1px solid #999;{swatch}"></span>'
-                f'{ntype}',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("### Edge types")
-        for etype, sty in EDGE_STYLE.items():
-            if etype == "default":
-                continue
-            rgba = sty["color"]
-            swatch = f"background: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]/255:.2f});"
-            st.markdown(
-                f'<span style="display:inline-block;width:12px;height:12px;'
-                f'border-radius:2px;margin-right:8px;border:1px solid #999;{swatch}"></span>'
-                f'{etype}',
-                unsafe_allow_html=True,
-            )
+    st.pydeck_chart(r, use_container_width=True, height=height)

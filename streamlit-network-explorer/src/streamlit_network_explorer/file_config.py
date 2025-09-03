@@ -10,7 +10,7 @@ DEFAULT_PATH = Path(os.getenv("DATA_CONFIG", "config/data_config.yaml")).resolve
 class DataConfig:
     nodes_csv: str | None
     edges_csv: str
-    node_id_col: str = "location_id"
+    node_id_col: str = "id"
     edge_src_col: str = "source"
     edge_dst_col: str = "target"
 
@@ -25,7 +25,7 @@ def load_config(path: str | Path | None = None) -> DataConfig:
     edges_csv = data.get("edges_csv")
     if not edges_csv:
         raise ValueError("Config must include data.edges_csv (path to edges CSV).")
-    node_id_col = data.get("node_id_col", "location_id")
+    node_id_col = data.get("node_id_col", "id")
     edge_src_col = data.get("edge_src_col", "source")
     edge_dst_col = data.get("edge_dst_col", "target")
     return DataConfig(nodes_csv=nodes_csv, edges_csv=edges_csv,
