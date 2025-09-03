@@ -7,3 +7,5 @@ xlsxwriter>=3.2
 pytest>=8.0
 pre-commit>=3.7
 ruff>=0.5
+pydeck>=0.9
+PyYAML>=6.0

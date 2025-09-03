@@ -21,9 +21,9 @@ def k_hop_nodes(G: nx.Graph, source, k: int) -> Set:
 def to_agraph(
     G: nx.Graph,
     selected: Optional[str],
-    hops: int,
     size_map_attr: Optional[str],
     palette: Dict[str, str],
+    hops: int = 1,
     max_node_size: int = 12,
 ) -> Tuple[List[Node], List[Edge]]:
     """Convert graph to streamlit-agraph nodes/edges with neighbor highlighting."""
