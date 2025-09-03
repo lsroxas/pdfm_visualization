@@ -56,3 +56,62 @@ def legend_box():
         ''',
         unsafe_allow_html=True,
     )
+
+
+# For details pane
+
+from typing import Any, Dict
+import pandas as pd
+import streamlit as st
+
+
+def _get_first_present(row: pd.Series, keys: list[str], default: str = "—") -> Any:
+    for k in keys:
+        if k in row.index and pd.notna(row[k]) and row[k] != "":
+            return row[k]
+    return default
+
+def node_details_panel(nodes_df: pd.DataFrame, selected_id: str | None) -> None:
+    """Render a compact details pane for the selected node."""
+    st.markdown("#### Details")
+
+    if not selected_id:
+        st.info("Select a node from the picker to see details.")
+        return
+
+    row = nodes_df.loc[nodes_df["id"].astype(str) == str(selected_id)]
+    if row.empty:
+        st.warning("Selected node not found in data.")
+        return
+
+    r = row.iloc[0]
+
+    # Pull common fields with graceful fallbacks
+    name        = _get_first_present(r, ["location_name", "name", "location"])
+    province    = _get_first_present(r, ["province"])
+    ntype       = _get_first_present(r, ["location_type", "type"])
+    tier        = _get_first_present(r, ["tier"])
+    population  = _get_first_present(r, ["population"])
+    lat         = _get_first_present(r, ["lat", "latitude"])
+    lon         = _get_first_present(r, ["lon", "longitude"])
+
+    # Format population nicely if numeric
+    try:
+        if population not in ("—", ""):
+            population = f"{int(float(population)):,}"
+    except Exception:
+        pass
+
+    st.markdown(f"""
+        **{name}**  
+        - **Province:** {province}  
+        - **Type:** {ntype}  
+        - **Tier:** {tier}  
+        - **Population:** {population}  
+        - **Coordinates:** {lat}, {lon}  
+        - **Location ID:** {r.get('id','—')}
+        """)
+
+    # Optionally show a tiny raw record expander for debugging
+    with st.expander("Raw record", expanded=False):
+        st.write(r.to_dict())

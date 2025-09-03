@@ -9,10 +9,10 @@ from streamlit_network_explorer import ui_components
 from streamlit_network_explorer.map_view import render_map
 
 def main():
-    st.set_page_config(page_title="Philippines Network Map", layout="wide")
+    st.set_page_config(page_title="PDFM - Philippine Network Map", layout="wide")
 
     ui_components.header(
-        title="Philippines Network Map",
+        title="PDFM Philippine Network Map",
         subtitle="Map-only viewer loaded via config/data_config.yaml",
     )
 
@@ -35,6 +35,10 @@ def main():
         if picked and picked != state.get_selected_node():
             state.set_selected_node(picked)
         ui_components.legend_box()
+
+        ## Add details pane
+        ui_components.node_details_panel(nodes_df, state.get_selected_node()) 
+        
         st.caption(f"Loaded nodes: {len(nodes_df):,} | edges: {len(edges_df):,}")
 
     with right:
