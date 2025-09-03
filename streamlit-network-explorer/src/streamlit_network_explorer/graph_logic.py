@@ -29,31 +29,6 @@ EDGE_STYLE_GRAPH = {
 
 EDGE_HIGHLIGHT_WIDTH = 2.5
 
-## Construct tooltips
-def _build_graph_tooltip_html(node_id, attrs: dict, degree: int, fields: list[str]) -> str:
-    def get_value(key: str):
-        if key == "id":
-            return node_id
-        if key == "degree":
-            return degree
-        # common aliases
-        if key == "lon" and "long" in attrs and "lon" not in attrs:
-            return attrs.get("long")
-        return attrs.get(key)
-    parts = []
-    # First line: try location_name (or label/id)
-    first = get_value("location_name") or attrs.get("label") or node_id
-    parts.append(f"<b>{first}</b>")
-    for k in fields:
-        if k == "location_name":
-            continue  # already shown in bold
-        v = get_value(k)
-        if v is None or v == "":
-            continue
-        parts.append(f"{k}: {v}")
-    return "<br>".join(parts)
-
-
 def k_hop_nodes(G: nx.Graph, source, k: int) -> Set:
     """Return nodes within k hops (including the source)."""
     if source not in G:
@@ -75,36 +50,21 @@ def to_agraph(
     palette: Dict[str, str],
     hops: int = 1,
     max_node_size: int = 12,
-    tooltip_fields: list[str] | None = None,
 ) -> Tuple[List[Node], List[Edge]]:
     """Convert graph to streamlit-agraph nodes/edges with neighbor highlighting."""
     hi = k_hop_nodes(G, selected, hops) if selected is not None else set()
-    fields = tooltip_fields or ["id","degree"]
 
     nodes: List[Node] = []
     for n, attrs in G.nodes(data=True):
-        label = str(attrs.get("location_name", n))
-        node_type = str(attrs.get("location_type", "default")).lower()
+        label = str(attrs.get("label", n))
+        node_type = str(attrs.get("type", "default")).lower()
         base = TYPE_STYLE_GRAPH.get(node_type, TYPE_STYLE_GRAPH["default"])
         color = base["color"]
         size  = base["size"]
 
         # Make a Tooltip        
-        # import json
-        # title = json.dumps(attrs, indent=2, default=str)
-        
-        degree = int(G.degree(n))
-        title = _build_graph_tooltip_html(n, attrs, degree, fields)
-
-        # title = (
-        # f"<b>{label}</b><br>"
-        # f"{attrs.get('province', 'n/a')}<br>"
-        # f"DMN Tier: {attrs.get('tier', 'n/a')}<br>"
-        # f"Population (2024): {attrs.get('population_2024', 'n/a'):,}<br>"
-        # # f"ID: {n}<br>"
-        # f"Degree: {degree}"
-        # + (f"<br>Lat/Lon: {lat}, {lon}" if (lat is not None and lon is not None) else "")
-        # )
+        import json
+        title = json.dumps(attrs, indent=2, default=str)
         
         # optional attribute-based scaling (kept if you use size_map_attr)
         # if size_map_attr and size_map_attr in attrs:

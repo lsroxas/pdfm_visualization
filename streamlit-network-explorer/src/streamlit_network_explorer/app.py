@@ -20,11 +20,8 @@ def main():
     except Exception as e:
         st.error(f"Failed to load data config: {e}")
         return
-    
-    graph_fields = (cfg.tooltips.graph_node if cfg.tooltips else None)
-    map_fields   = (cfg.tooltips.map_node   if cfg.tooltips else None)
 
-    # Load graph    
+    # Load graph
     G = data_io.get_graph_from_config(cfg)
 
     # Selection state
@@ -73,15 +70,8 @@ def main():
                 neighbor_node_color_hex=NEIGHBOR_COLOR_HEX,
             )
 
-    ## The Map Render
     with tabs[0]:
         from streamlit_network_explorer.map_view import render_map, render_legend
-
-        picked = ui_components.node_picker(G, state.get_selected_node())
-        if picked:
-            state.set_selected_node(picked)
-        
-
         col_map, col_legend = st.columns([4, 1], gap="large")
         
         with col_map:
@@ -92,9 +82,6 @@ def main():
                 height=opts.canvas_height,
                 initial_zoom=5.0,
                 philippines_center=(12.8797, 121.7740),
-                tooltip_fields=map_fields,
-                center_on_node=state.get_selected_node(),
-                zoom_on_center=8.5,
             )
         
         with col_legend:

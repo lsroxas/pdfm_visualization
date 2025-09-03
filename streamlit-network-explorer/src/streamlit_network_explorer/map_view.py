@@ -18,9 +18,9 @@ _LON_KEYS = ("lon", "long", "lng", "longitude", "x")
 
 # Type styles: base radius (meters) and color [R,G,B,A]
 TYPE_STYLE = {
-    "province":     {"radius": 10, "color": [234, 78, 78, 220]},   # red-ish
-    "municipality": {"radius": 5,  "color": [180, 180, 180, 180]}, # grey
-    "default":      {"radius": 10, "color": [255, 127, 14, 240]},  # orange
+    "province": {"radius": 10, "color": [220, 68, 55, 220]},      # red-ish
+    "municipality": {"radius": 5, "color": [180, 180, 180, 180]},   # grey
+    "default": {"radius": 5, "color": [255, 127, 14, 240]},   # orange
 }
 
 # Optional highlight overrides (selected/neighbor)
@@ -31,43 +31,13 @@ NEIGHBOR_BOOST  = 3
 
 # Edge styles by type (MAP view)
 EDGE_STYLE = {
-    "proximity": {"color": [234, 78, 78, 160],  "width": 1.0},  # red
-    "ownership": {"color": [41, 41, 41, 160],   "width": 1.0},  # dark
-    "similarity":{"color": [148, 103, 189, 160],"width": 1.0},  # purple
-    "default":   {"color": [255, 170, 0, 160],  "width": 1.0},  # fallback
+    "proximity": {"color": [136, 136, 136, 160], "width": 1.0},  # gray
+    "ownership": {"color": [41, 41, 41, 160], "width": 1.0},     # blue
+    "similarity": {"color": [148, 103, 189, 160], "width": 1.0}, # purple
+    "default": {"color": [255, 170, 0, 160], "width": 1.0},      # fallback
 }
 
 EDGE_HIGHLIGHT_WIDTH = 2.5
-EDGE_HIGHLIGHT_COLOR = [255, 127, 14, 200]  # orange for highlighted edges
-
-def _build_map_tooltip_html(node_id, row: dict, fields: list[str]) -> str:
-    """Build the HTML used by the Deck.gl tooltip from selected fields."""
-    def get_value(key: str):
-        if key == "id":
-            return node_id
-        if key == "degree":
-            return row.get("deg")
-        if key == "lon" and row.get("lon") is None and row.get("long") is not None:
-            return row.get("long")
-        return row.get(key)
-
-    # First line: bold name, uppercase if province
-    first = get_value("location_name") or row.get("label") or node_id
-    if (row.get("location_type") or "").lower() == "province":
-        first = str(first).upper()
-
-    parts = [f"<b>{first}</b>"]
-
-    # Additional lines: {Field Title}: value
-    for k in fields:
-        if k == "location_name":
-            continue  # already shown as first line
-        v = get_value(k)
-        if v is None or v == "":
-            continue
-        parts.append(f"{k.title()}: {v}")
-
-    return "<br>".join(parts)
 
 def _get_first(attrs: Dict, keys: Iterable[str]):
     for k in keys:
@@ -93,8 +63,7 @@ def _has_geo(G: nx.Graph) -> bool:
             return True
     return False
 
-def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int, tooltip_fields: list[str]):
-    """Convert graph to map-friendly DataFrames for nodes and edges."""
+def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int):
     hi: Set = k_hop_nodes(G, selected, hops) if selected is not None else set()
 
     nodes = []
@@ -103,11 +72,8 @@ def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int, tooltip_fi
         if lon is None or lat is None:
             continue
 
-        node_type = str(a.get("location_type", "default")).lower()
-        raw_label = str(a.get("location_name", n))
-        label = raw_label.upper() if node_type == "province" else raw_label
-
-        base   = TYPE_STYLE.get(node_type, TYPE_STYLE["default"])
+        node_type = str(a.get("type", "default")).lower()
+        base = TYPE_STYLE.get(node_type, TYPE_STYLE["default"])
         radius = float(base["radius"])
         fill   = list(base["color"])
 
@@ -122,19 +88,19 @@ def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int, tooltip_fi
             fill = NEIGHBOR_COLOR
             radius += NEIGHBOR_BOOST
 
-        # Build row; include only columns useful for tooltip to keep payload light
-        row = {
+        nodes.append({
             "id": str(n),
-            "label": label,
-            "location_type": a.get("location_type", "default"),
-            "lon": lon, "lat": lat,
+            "label": a.get("label", str(n)),
+            "type": node_type,
+            "lon": lon,
+            "lat": lat,
             "deg": int(G.degree(n)),
-            "sel": is_sel, "hi": is_hi,
-            "radius": radius, "fill": fill,
-            **{k: v for k, v in a.items() if k in tooltip_fields},
-        }
-        row["tooltip_html"] = _build_map_tooltip_html(n, row, tooltip_fields)
-        nodes.append(row)
+            "sel": is_sel,
+            "hi": is_hi,
+            "radius": radius,   # <-- computed here
+            "fill": fill,       # <-- computed here
+            **{k: v for k, v in a.items() if k not in ("lat","lon","long")},
+        })
 
     ndf = pd.DataFrame(nodes)
 
@@ -146,7 +112,7 @@ def _graph_to_frames(G: nx.Graph, selected: Optional[str], hops: int, tooltip_fi
         if None in (lon1, lat1, lon2, lat2):
             continue
 
-        etype  = str(e.get("type", "default")).lower()
+        etype = str(e.get("type", "default")).lower()
         estyle = EDGE_STYLE.get(etype, EDGE_STYLE["default"])
 
         edges.append({
@@ -185,9 +151,8 @@ def render_map(
     height: int = 700,
     initial_zoom: float = 5.0,
     philippines_center: Tuple[float, float] = (12.8797, 121.7740),  # lat, lon
-    tooltip_fields: list[str] | None = None,
-    center_on_node: Optional[str] = None,
-    zoom_on_center: float = 8.5,
+    center_on_node: Optional[str] = None,      # <-- add this
+    zoom_on_center: float = 8.5,               # <-- and this (used below)
 ):
     """Render a Deck.gl map with node and edge layers over the Philippines."""
     if not _has_geo(G):
@@ -197,8 +162,14 @@ def render_map(
         )
         return
 
-    fields = tooltip_fields or ["location_type", "lat", "lon"]
-    nodes_df, edges_df = _graph_to_frames(G, selected, hops, fields)
+    nodes_df, edges_df = _graph_to_frames(G, selected, hops)
+
+    # Debug panel to verify what we got
+    # with st.expander("🧪 Map debug", expanded=False):
+    #     st.write(f"Nodes w/ coords: {len(nodes_df)}")
+    #     st.write(f"Edges w/ coords: {len(edges_df)}")
+    #     if not nodes_df.empty:
+    #         st.dataframe(nodes_df.head(5), use_container_width=True)
 
     # Compute center from data if present; else fallback to Philippines
     lat0, lon0, z0 = _autocenter(nodes_df, philippines_center, initial_zoom)
@@ -221,7 +192,7 @@ def render_map(
         get_color="hi ? highlight_color : base_color",
         parameters={
             "highlight_width": EDGE_HIGHLIGHT_WIDTH,
-            "highlight_color": EDGE_HIGHLIGHT_COLOR,
+            # "highlight_color": EDGE_HIGHLIGHT_COLOR,
         },
         pickable=False,
         auto_highlight=True,
@@ -252,7 +223,7 @@ def render_map(
             map_style="mapbox://styles/mapbox/light-v11",
             initial_view_state=view_state,
             layers=layers,
-            tooltip={"html": "{tooltip_html}", "style": {"color": "white"}},
+            tooltip={"html": "<b>{label}</b><br/>Degree: {deg}<br/>ID: {id}", "style": {"color": "white"}},
         )
     else:
         # OSM background via TileLayer so you see a basemap even w/o Mapbox token
@@ -263,8 +234,8 @@ def render_map(
         )
         r = pdk.Deck(
             initial_view_state=view_state,
-            layers=[tile] + layers,
-            tooltip={"html": "{tooltip_html}", "style": {"color": "white"}},
+            layers=layers,
+            tooltip={"html": "<b>{label}</b><br/>Degree: {deg}<br/>ID: {id}", "style": {"color": "white"}},
         )
 
     # --- Render with true click events via streamlit-deckgl ---

@@ -1,11 +1,6 @@
 data:
-  nodes_csv: data/all_node_features.csv     # optional
+  nodes_csv: data/all_nodes.csv     # optional
   edges_csv: data/all_edges.csv     # required
   node_id_col: location_id
-  node_type_col: location_type
   edge_src_col: source
   edge_dst_col: target
-
-tooltips:
-  graph_node: ["location_name", "province", "tier", "population_2024"]
-  map_node:   ["location_name", "province", "tier", "population_2024"]
