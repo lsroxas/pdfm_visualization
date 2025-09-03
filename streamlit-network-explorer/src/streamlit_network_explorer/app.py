@@ -20,8 +20,11 @@ def main():
     except Exception as e:
         st.error(f"Failed to load data config: {e}")
         return
+    
+    graph_fields = (cfg.tooltips.graph_node if cfg.tooltips else None)
+    map_fields   = (cfg.tooltips.map_node   if cfg.tooltips else None)
 
-    # Load graph
+    # Load graph    
     G = data_io.get_graph_from_config(cfg)
 
     # Selection state
@@ -34,25 +37,25 @@ def main():
     with st.sidebar:
         opts = ui_components.display_options()
 
-    tabs = st.tabs(["Graph", "Map"])
+    tabs = st.tabs(["Map", "Graph"])
 
-    with tabs[0]:
+    with tabs[1]:
         col_graph, col_legend = st.columns([4, 1], gap="large")
 
-        with col_graph:
-            nodes, edges = graph_logic.to_agraph(
-                G,
-                selected=selected_node,
-                hops=opts.hops,
-                size_map_attr=opts.size_map_attr,
-                # size_map_attr=None
-                palette=styles.palette(),
-                # lock_layout=opts.lock_layout,
-                # layout_algo=opts.layout_algo,
-            )
-            selection = ui_components.graph_area(nodes, edges, opts)
-            if isinstance(selection, dict) and selection.get("type") == "node":
-                state.set_selected_node(selection.get("id"))
+        # with col_graph:
+            # nodes, edges = graph_logic.to_agraph(
+            #     G,
+            #     selected=selected_node,
+            #     hops=opts.hops,
+            #     size_map_attr=opts.size_map_attr,
+            #     # size_map_attr=None
+            #     palette=styles.palette(),
+            #     # lock_layout=opts.lock_layout,
+            #     # layout_algo=opts.layout_algo,
+            # )
+            # selection = ui_components.graph_area(nodes, edges, opts)
+            # if isinstance(selection, dict) and selection.get("type") == "node":
+            #     state.set_selected_node(selection.get("id"))
         
         with col_legend:
             # Legend for Graph View
@@ -70,8 +73,9 @@ def main():
                 neighbor_node_color_hex=NEIGHBOR_COLOR_HEX,
             )
 
-    with tabs[1]:
+    with tabs[0]:
         from streamlit_network_explorer.map_view import render_map, render_legend
+
         col_map, col_legend = st.columns([4, 1], gap="large")
         
         with col_map:
@@ -82,6 +86,7 @@ def main():
                 height=opts.canvas_height,
                 initial_zoom=5.0,
                 philippines_center=(12.8797, 121.7740),
+                tooltip_fields=map_fields
             )
         
         with col_legend:
