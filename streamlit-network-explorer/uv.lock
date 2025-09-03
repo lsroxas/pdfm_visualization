@@ -699,20 +699,6 @@ wheels = [
 ]
 
 [[package]]
-name = "streamlit-deckgl"
-version = "0.5.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jinja2" },
-    { name = "pydeck" },
-    { name = "streamlit" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/76/86/b82985c67bfe835f1e1142aee44e21aa76adaccbf1193aace5d9c498978a/streamlit-deckgl-0.5.1.tar.gz", hash = "sha256:a8e9e42be11a3c087a51b76044b2c4bd9081f0c80918ab46d45f806565555c54", size = 62238, upload-time = "2023-07-17T05:10:01.978Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/9c/c77e7cc98c79d36689959f59f8d144fdd78d2e02974ae0521685e8568d73/streamlit_deckgl-0.5.1-py3-none-any.whl", hash = "sha256:4a7241195d6ba2a75e039ad8f61e8a2fe5f9db1a792d1ca6e7267ded9b5fee1c", size = 62276, upload-time = "2023-07-17T05:09:59.006Z" },
-]
-
-[[package]]
 name = "streamlit-folium"
 version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -743,7 +729,6 @@ dependencies = [
     { name = "ruff" },
     { name = "streamlit" },
     { name = "streamlit-agraph" },
-    { name = "streamlit-deckgl" },
     { name = "streamlit-folium" },
     { name = "xlsxwriter" },
 ]
@@ -761,7 +746,6 @@ requires-dist = [
     { name = "ruff", specifier = ">=0.5" },
     { name = "streamlit", specifier = ">=1.36" },
     { name = "streamlit-agraph", specifier = ">=0.0.45" },
-    { name = "streamlit-deckgl", specifier = ">=0.5.1" },
     { name = "streamlit-folium", specifier = ">=0.25.1" },
     { name = "xlsxwriter", specifier = ">=3.2" },
 ]

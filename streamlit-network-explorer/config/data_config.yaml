@@ -1,6 +1,17 @@
+
 data:
-  nodes_csv: data/all_nodes.csv     # optional
-  edges_csv: data/all_edges.csv     # required
-  node_id_col: location_id
-  edge_src_col: source
-  edge_dst_col: target
+  nodes:
+    path: data/all_nodes_withtier.csv
+    id_col: location_id
+    lat_col: lat
+    lon_col: long
+    location_name_col: location_name
+    province_col: province
+    tier_col: tier
+    population_col: population_2024
+    type_col: location_type
+  edges:
+    path: data/all_edges.csv
+    source_col: source_id
+    target_col: target_id
+    type_col: type

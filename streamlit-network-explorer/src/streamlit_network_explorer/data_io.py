@@ -1,77 +1,66 @@
-# src/streamlit_network_explorer/data_io.py
-from typing import Dict, Optional
-import networkx as nx
+
+from __future__ import annotations
+from pathlib import Path
+from typing import Tuple, Dict
 import pandas as pd
-import streamlit as st
 
-from .config import Defaults
+from .file_config import load_config
 
-@st.cache_data(show_spinner=True)
-def generate_demo_graph(n_nodes: int, avg_degree: int, seed: int = 42) -> nx.Graph:
-    rng = nx.utils.create_random_state(seed)
-    m = max(1, avg_degree // 2)
-    G = nx.barabasi_albert_graph(n=n_nodes, m=m, seed=rng)
-    for n in G.nodes:
-        G.nodes[n]["label"] = f"Node {n}"
-        G.nodes[n]["type"] = "demo"
-    for u, v in G.edges:
-        G.edges[u, v]["weight"] = 1
-    return G
+def _get(d: Dict, key: str, default: str) -> str:
+    v = d.get(key, default)
+    return str(v) if v is not None else default
 
-def _load_csv(nodes, edges, node_id_col: str, src: str, dst: str) -> nx.Graph:
-    G = nx.Graph()
-    if nodes:
-        node_df = pd.read_csv(nodes)
-        assert node_id_col in node_df.columns, f"Nodes CSV must have '{node_id_col}'"
-        for _, row in node_df.iterrows():
-            nid = row[node_id_col]
-            G.add_node(nid, **row.to_dict())
-    if edges:
-        edge_df = pd.read_csv(edges)
-        assert src in edge_df.columns and dst in edge_df.columns, f"Edges CSV must have '{src}' and '{dst}'"
-        for _, row in edge_df.iterrows():
-            u, v = row[src], row[dst]
-            attrs = row.to_dict()
-            attrs.pop(src, None); attrs.pop(dst, None)
-            G.add_edge(u, v, **attrs)
-    return G
+def load_nodes_edges(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    dnodes = cfg["data"]["nodes"]
+    dedges = cfg["data"]["edges"]
 
-def get_graph_from_config(cfg) -> nx.Graph:
-    return _load_csv(cfg.nodes_csv, cfg.edges_csv, cfg.node_id_col, cfg.edge_src_col, cfg.edge_dst_col)
+    # Nodes config
+    n_path = Path(dnodes.get("path", "data/nodes.csv"))
+    n_delim = dnodes.get("delimiter", ",")
+    id_col = _get(dnodes, "id_col", "id")
+    lat_col = _get(dnodes, "lat_col", "lat")
+    lon_col = _get(dnodes, "lon_col", "lon")
+    name_col = _get(dnodes, "location_name_col", "location_name")
+    prov_col = _get(dnodes, "province_col", "province")
+    tier_col = _get(dnodes, "tier_col", "tier")
+    pop_col = _get(dnodes, "population_col", "population")
+    type_col = _get(dnodes, "type_col", "location_type")
 
+    nodes = pd.read_csv(n_path, delimiter=n_delim)
+    rename_map = {
+        id_col: "id",
+        lat_col: "lat",
+        lon_col: "lon",
+        name_col: "location_name",
+        prov_col: "province",
+        tier_col: "tier",
+        pop_col: "population",
+        type_col: "location_type",
+    }
+    nodes = nodes.rename(columns=rename_map)
 
+    keep_cols = [c for c in ["id","lat","lon","location_name","province","tier","population","location_type"] if c in nodes.columns]
+    nodes = nodes[keep_cols].copy()
 
-# def _load_parquet(nodes, edges, node_id_col: str, src: str, dst: str) -> nx.Graph:
-#     G = nx.Graph()
-#     if nodes:
-#         node_df = pd.read_parquet(nodes)
-#         assert node_id_col in node_df.columns, f"Nodes Parquet must have '{node_id_col}'"
-#         for _, row in node_df.iterrows():
-#             nid = row[node_id_col]
-#             G.add_node(nid, **row.to_dict())
-#     if edges:
-#         edge_df = pd.read_parquet(edges)
-#         assert src in edge_df.columns and dst in edge_df.columns, f"Edges Parquet must have '{src}' and '{dst}'"
-#         for _, row in edge_df.iterrows():
-#             u, v = row[src], row[dst]
-#             attrs = row.to_dict()
-#             attrs.pop(src, None); attrs.pop(dst, None)
-#             G.add_edge(u, v, **attrs)
-#     return G
+    nodes["id"] = nodes["id"].astype(str)
+    if "lat" in nodes: nodes["lat"] = pd.to_numeric(nodes["lat"], errors="coerce")
+    if "lon" in nodes: nodes["lon"] = pd.to_numeric(nodes["lon"], errors="coerce")
 
-# def get_graph(source_type: str, data_files: Dict, opts):
-#     """Return a NetworkX graph based on source selection and uploaded files."""
-#     if source_type == "Demo":
-#         return generate_demo_graph(opts.demo_nodes, opts.avg_degree)
+    # Edges config
+    e_path = Path(dedges.get("path", "data/edges.csv"))
+    e_delim = dedges.get("delimiter", ",")
+    src_col = _get(dedges, "source_col", "source")
+    tgt_col = _get(dedges, "target_col", "target")
+    etype_col = _get(dedges, "type_col", "type")
 
-#     node_id_col = opts.node_id_col or Defaults.node_id_col
-#     src = opts.edge_src_col or Defaults.edge_src_col
-#     dst = opts.edge_dst_col or Defaults.edge_dst_col
+    edges = pd.read_csv(e_path, delimiter=e_delim)
+    edges = edges.rename(columns={src_col: "source", tgt_col: "target", etype_col: "type"})
+    edges["source"] = edges["source"].astype(str)
+    edges["target"] = edges["target"].astype(str)
+    if "type" not in edges.columns:
+        edges["type"] = "default"
 
-#     if source_type == "CSV":
-#         return _load_csv(data_files.get("nodes"), data_files.get("edges"), node_id_col, src, dst)
-#     elif source_type == "Parquet":
-#         return _load_parquet(data_files.get("nodes"), data_files.get("edges"), node_id_col, src, dst)
-#     else:
-#         # Fallback to demo if nothing matches
-#         return generate_demo_graph(Defaults.demo_nodes, Defaults.avg_degree)
+    ids = set(nodes["id"])
+    edges = edges[edges["source"].isin(ids) & edges["target"].isin(ids)].copy()
+
+    return nodes, edges
