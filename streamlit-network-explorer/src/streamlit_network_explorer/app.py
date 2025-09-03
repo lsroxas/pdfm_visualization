@@ -9,10 +9,10 @@ from streamlit_network_explorer import ui_components
 from streamlit_network_explorer.map_view import render_map
 
 def main():
-    st.set_page_config(page_title="PDFM - Philippine Network Map", layout="wide")
+    st.set_page_config(page_title="DKSH Market Expansion Services", layout="wide")
 
     ui_components.header(
-        title="PDFM Philippine Network Map",
+        title="DKSH Market Expansion Services",
         subtitle="Map-only viewer loaded via config/data_config.yaml",
     )
 

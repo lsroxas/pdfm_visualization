@@ -388,6 +388,43 @@ def _render_bullets(items: List[str]) -> str:
         for i in items
     ) + "</ul>"
 
+
+def _parse_top_changes(val) -> list[dict]:
+    """
+    Parse a top_changes cell into a list of {feature, cf} dicts.
+    Returns [] if parsing fails.
+    """
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return []
+    try:
+        parsed = json.loads(val) if isinstance(val, str) else val
+        if isinstance(parsed, list) and all(isinstance(x, dict) for x in parsed):
+            return parsed
+    except Exception:
+        pass
+    return []
+
+
+def _render_counterfactuals(changes: list[dict]) -> str:
+    """
+    Render a bullet list of feature: cf, sorted ascending by cf, cf<10.
+    If none valid, return 'No valid counterfactual'.
+    """
+    # filter and sort
+    valid = [
+        d for d in changes
+        if "cf" in d and isinstance(d["cf"], (int, float)) and d["cf"] < 10
+    ]
+    valid.sort(key=lambda d: d["cf"])
+
+    if not valid:
+        return "No valid counterfactual"
+
+    return "<ul style='margin:0;padding-left:18px;'>" + "".join(
+        f"<li>{d.get('feature', '?')}: {d['cf']}</li>" for d in valid
+    ) + "</ul>"
+
+
 def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.DataFrame) -> None:
     """
     Show Counterfactuals:
@@ -437,22 +474,30 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
     df = df[needed].copy()
 
     matches = df.loc[df[id_col].astype(str) == str(selected_id)]
-    # Merge all top changes (if multiple rows, union)
-    all_changes: List[str] = []
+    # # Merge all top changes (if multiple rows, union)
+    # all_changes: List[str] = []
+    # for _, r in matches.iterrows():
+    #     all_changes.extend(_coerce_changes(r.get(chg_col)))
+    # # Deduplicate preserving order
+    # seen = set()
+    # merged_changes = [x for x in all_changes if not (x in seen or seen.add(x))]
+
+    # Collect all top_changes dicts across rows
+    all_changes: list[dict] = []
     for _, r in matches.iterrows():
-        all_changes.extend(_coerce_changes(r.get(chg_col)))
-    # Deduplicate preserving order
-    seen = set()
-    merged_changes = [x for x in all_changes if not (x in seen or seen.add(x))]
+        all_changes.extend(_parse_top_changes(r.get(chg_col)))
 
     # Render
     c1, c2 = st.columns([1, 2])
     with c1:
         st.markdown(f"**Current:** { _normalize_tier(tier_val) or '—' }")
         st.markdown(f"**Desired:** { desired_tier }")
-    with c2:
         st.markdown("**Top changes:**")
-        st.markdown(_render_bullets(merged_changes), unsafe_allow_html=True)
+        st.markdown(_render_counterfactuals(all_changes), unsafe_allow_html=True)
+    with c2:
+        # st.markdown("**Top changes:**")
+        # st.markdown(_render_counterfactuals(all_changes), unsafe_allow_html=True)
+        st.caption("Space for LIME.")
 
     if matches.empty:
         st.caption("No matching counterfactual rows found for this node.")
