@@ -9,6 +9,8 @@ from typing import Any, Dict, Iterable, Tuple, List
 #For additional details
 from typing import Optional
 
+#For counterfactuals
+import json
 
 def header(title: str, subtitle: str | None = None):
     st.title(title)
@@ -189,7 +191,7 @@ def full_node_record_panel(nodes_df: pd.DataFrame, selected_id: Optional[str]) -
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=True)
 def _load_nodes_raw_csv(nodes_cfg: Dict) -> pd.DataFrame:
     """Load the raw nodes CSV as-is, without renaming columns."""
     path = nodes_cfg.get("path", "data/nodes.csv")
@@ -239,7 +241,6 @@ def full_node_record_from_csv(cfg: Dict, selected_id: Optional[str]) -> None:
 
     table = pd.DataFrame({"Field": ordered, "Value": [r[c] for c in ordered]})
     st.dataframe(table, hide_index=True, use_container_width=True)
-
 
 @st.cache_data(show_spinner=False)
 def _load_nodes_raw_csv(nodes_cfg: Dict) -> pd.DataFrame:
@@ -316,3 +317,143 @@ def full_node_record_grouped_from_csv(cfg: Dict, selected_id: Optional[str]) -> 
     if remaining_cols:
         with st.expander("Other", expanded=False):
             st.dataframe(_field_value_df(r, remaining_cols), hide_index=True, use_container_width=True)
+
+####### Counterfactuals pane
+
+# --- Tier helpers -------------------------------------------------------------
+def _normalize_tier(value) -> str | None:
+    """
+    Accepts 'Tier 3', 'tier3', '3', 3, etc. Returns normalized 'Tier X' or None.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    # Extract the first digit in 1..4
+    import re
+    m = re.search(r"[1-4]", s)
+    if not m:
+        return None
+    n = int(m.group(0))
+    return f"Tier {n}"
+
+def _desired_tier(current: str | None) -> str | None:
+    """
+    Given a normalized 'Tier N', return the next tier up (lower number).
+    Tier 4 -> Tier 3 -> Tier 2 -> Tier 1 -> Tier 1.
+    """
+    cur = _normalize_tier(current)
+    if cur is None:
+        return None
+    try:
+        n = int(cur.split()[-1])
+    except Exception:
+        return None
+    n = max(1, n - 1)  # move up a tier; clamp at Tier 1
+    return f"Tier {n}"
+
+
+@st.cache_data(show_spinner=False)
+def _load_counterfactuals_csv(cfg: Dict) -> pd.DataFrame:
+    path = cfg.get("path", "data/counterfactuals.csv")
+    delim = cfg.get("delimiter", ",")
+    return pd.read_csv(path, delimiter=delim)
+
+def _coerce_changes(val: Any) -> List[str]:
+    """Turn a cell (JSON/text/NaN) into a list[str] of changes."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return []
+    s = str(val).strip()
+    # Try JSON list
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, (list, tuple)):
+            return [str(x) for x in parsed]
+    except Exception:
+        pass
+    # Fallback: split on common separators if not JSON
+    if ";" in s:
+        return [x.strip() for x in s.split(";") if x.strip()]
+    if "|" in s:
+        return [x.strip() for x in s.split("|") if x.strip()]
+    # Single item
+    return [s] if s else []
+
+def _render_bullets(items: List[str]) -> str:
+    if not items:
+        return "—"
+    return "<ul style='margin:0;padding-left:18px;'>" + "".join(
+        f"<li>{st._utils.escape_markdown(i, unsafe_allow_html=True) if hasattr(st, '_utils') else i}</li>"
+        for i in items
+    ) + "</ul>"
+
+def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.DataFrame) -> None:
+    """
+    Show Counterfactuals:
+      - Tier comes from nodes_df (lookup by selected_id).
+      - Only read/display top_changes from data.counterfactuals CSV.
+    """
+    st.markdown("#### Counterfactuals")
+
+    if not selected_id:
+        st.info("Pick a node to view counterfactuals.")
+        return
+
+    # --- Tier from nodes_df
+    tier_val = "—"
+    if not nodes_df.empty and "id" in nodes_df.columns:
+        row = nodes_df.loc[nodes_df["id"].astype(str) == str(selected_id)]
+        if not row.empty:
+            # Be defensive about the tier column name just in case
+            if "tier" in row.columns:
+                tier_val = row.iloc[0]["tier"]
+            else:
+                # Try a couple of alternates
+                for c in ("Tier", "TIER"):
+                    if c in row.columns:
+                        tier_val = row.iloc[0][c]
+                        break
+    
+    desired_tier = _desired_tier(tier_val) or "—"
+
+    cf_cfg = (cfg or {}).get("data", {}).get("counterfactuals", {})
+    if not cf_cfg:
+        st.caption("No 'data.counterfactuals' section configured in data_config.yaml.")
+        # Still show tier so the pane isn’t empty
+        st.markdown(f"**Tier:** {tier_val}")
+        return
+
+    id_col  = cf_cfg.get("id_col", "location_id")
+    chg_col = cf_cfg.get("top_changes_col", "top_changes")
+
+    df = _load_counterfactuals_csv(cf_cfg)
+    # Keep only columns we care about (if present)
+    needed = [c for c in (id_col, chg_col) if c in df.columns]
+    if not needed or id_col not in df.columns or chg_col not in df.columns:
+        st.error(f"Counterfactuals CSV must contain '{id_col}' and '{chg_col}'.")
+        st.markdown(f"**Tier:** {tier_val}")
+        return
+    df = df[needed].copy()
+
+    matches = df.loc[df[id_col].astype(str) == str(selected_id)]
+    # Merge all top changes (if multiple rows, union)
+    all_changes: List[str] = []
+    for _, r in matches.iterrows():
+        all_changes.extend(_coerce_changes(r.get(chg_col)))
+    # Deduplicate preserving order
+    seen = set()
+    merged_changes = [x for x in all_changes if not (x in seen or seen.add(x))]
+
+    # Render
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.markdown(f"**Current:** { _normalize_tier(tier_val) or '—' }")
+        st.markdown(f"**Desired:** { desired_tier }")
+    with c2:
+        st.markdown("**Top changes:**")
+        st.markdown(_render_bullets(merged_changes), unsafe_allow_html=True)
+
+    if matches.empty:
+        st.caption("No matching counterfactual rows found for this node.")
+

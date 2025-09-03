@@ -29,3 +29,8 @@ data:
     source_col: source_id
     target_col: target_id
     type_col: type
+
+  counterfactuals:
+    path: data/counterfactuals.csv
+    id_col: location_id
+    top_changes_col: top_changes

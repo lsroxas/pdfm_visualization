@@ -58,5 +58,8 @@ def main():
 
         # Full attributes pane under the map
         ui_components.full_node_record_grouped_from_csv(cfg, state.get_selected_node())
+
+        # Counterfactuals pane 
+        ui_components.counterfactuals_panel(cfg, state.get_selected_node(), nodes_df)
 if __name__ == "__main__":
     main()
