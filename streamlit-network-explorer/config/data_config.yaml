@@ -1,0 +1,6 @@
+data:
+  nodes_csv: data/nodes.csv     # optional
+  edges_csv: data/edges.csv     # required
+  node_id_col: id
+  edge_src_col: source
+  edge_dst_col: target
