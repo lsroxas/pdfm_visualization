@@ -21,4 +21,9 @@ dependencies = [
   "PyYAML>=6.0",
   "folium>=0.20.0",
   "streamlit-folium>=0.25.1",
+  "lime>=0.2.0.1",
+  "xgboost>=3.0.4",
 ]
+
+[project.scripts]
+network-explorer = "streamlit_network_explorer.minimal_usage:main"

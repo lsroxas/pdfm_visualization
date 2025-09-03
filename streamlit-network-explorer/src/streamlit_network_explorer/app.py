@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from streamlit_network_explorer.file_config import load_config
-from streamlit_network_explorer.data_io import load_nodes_edges
+from streamlit_network_explorer.data_io import load_nodes_edges, load_lime_input_data
 from streamlit_network_explorer import state
 from streamlit_network_explorer import ui_components
 from streamlit_network_explorer.map_view import render_map
@@ -24,6 +24,7 @@ def main():
 
     try:
         nodes_df, edges_df = load_nodes_edges(cfg)
+        lime_df = load_lime_input_data(cfg)  # NEW
     except Exception as e:
         st.error(f"Failed to load CSVs from config: {e}")
         return
@@ -42,7 +43,7 @@ def main():
         ui_components.legend_box()
         ui_components.node_details_panel(nodes_df, state.get_selected_node()) 
         
-        st.caption(f"Loaded nodes: {len(nodes_df):,} | edges: {len(edges_df):,}")
+        st.caption(f"Loaded nodes: {len(nodes_df):,}")
 
     with right:
         render_map(
@@ -60,6 +61,6 @@ def main():
         ui_components.full_node_record_grouped_from_csv(cfg, state.get_selected_node())
 
         # Counterfactuals pane 
-        ui_components.counterfactuals_panel(cfg, state.get_selected_node(), nodes_df)
+        ui_components.counterfactuals_panel(cfg, state.get_selected_node(), nodes_df, lime_df)
 if __name__ == "__main__":
     main()

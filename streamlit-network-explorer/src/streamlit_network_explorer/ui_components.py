@@ -7,11 +7,125 @@ import pandas as pd
 from typing import Any, Dict, Iterable, Tuple, List
 
 #For additional details
-from typing import Optional
+from typing import Optional, Sequence
 
 #For counterfactuals
 import json
+import pathlib, pickle, hashlib
+import numpy as np
+import xgboost
 
+# ---- model + lime utils -----------------------------------------------------
+
+@st.cache_resource(show_spinner=True)
+def _load_pickle_model(model_path: str):
+    p = pathlib.Path(model_path)
+    if not p.exists():
+        raise FileNotFoundError(f"Model file not found: {p}")
+    with p.open("rb") as f:
+        return pickle.load(f)
+
+def _detect_mode(model) -> str:
+    return "classification" if hasattr(model, "predict_proba") else "regression"
+
+def _predict_fn_for(model):
+    if hasattr(model, "predict_proba"):
+        return lambda X: model.predict_proba(X)
+    return lambda X: np.atleast_2d(model.predict(X)).reshape(-1, 1)
+
+def _hash_background(df: pd.DataFrame) -> str:
+    h = hashlib.md5()
+    h.update(str(df.shape).encode())
+    h.update(",".join(df.columns).encode())
+    h.update(pd.util.hash_pandas_object(df.head(50), index=False).values.tobytes())
+    return h.hexdigest()
+
+@st.cache_resource(show_spinner=False)
+def _build_lime_explainer(
+    background_df: pd.DataFrame,
+    feature_cols: Sequence[str],
+    class_names: Optional[Sequence[str]],
+    categorical_features: Optional[Sequence[str]],
+    mode: str,
+    _bg_key: str,   # cache key
+):
+    from lime.lime_tabular import LimeTabularExplainer
+    X_bg = background_df[feature_cols].to_numpy()
+
+    cat_idx = None
+    if categorical_features:
+        name_to_idx = {n: i for i, n in enumerate(feature_cols)}
+        cat_idx = [name_to_idx[n] for n in categorical_features if n in name_to_idx]
+
+    return LimeTabularExplainer(
+        training_data=X_bg,
+        feature_names=list(feature_cols),
+        class_names=list(class_names) if class_names is not None else None,
+        categorical_features=cat_idx,
+        mode=mode,
+        discretize_continuous=True,
+        random_state=42,
+        verbose=False,
+    )
+
+def _lime_explain_row(model, explainer, row: pd.Series, feature_cols: Sequence[str], num_features: int = 10):
+    label_to_explain = None
+    if hasattr(model, "predict_proba"):
+        probs = _predict_fn_for(model)(row[feature_cols].to_frame().T)
+        label_to_explain = int(np.argmax(probs, axis=1)[0])
+
+    x = row[feature_cols].to_numpy()
+    exp = explainer.explain_instance(
+        data_row=x,
+        predict_fn=lambda X: _predict_fn_for(model)(pd.DataFrame(X, columns=feature_cols)),
+        num_features=num_features,
+        top_labels=1,
+        labels=[label_to_explain] if label_to_explain is not None else None,
+    )
+    return exp, label_to_explain
+
+# ---- counterfactuals helpers you already have (trimmed to essentials) -------
+
+def _normalize_tier(value) -> str | None:
+    if value is None: return None
+    import re
+    m = re.search(r"[1-4]", str(value))
+    return f"Tier {int(m.group(0))}" if m else None
+
+def _desired_tier(current: str | None) -> str | None:
+    cur = _normalize_tier(current)
+    if not cur: return None
+    n = max(1, int(cur.split()[-1]) - 1)
+    return f"Tier {n}"
+
+def _parse_top_changes(val) -> list[dict]:
+    if val is None or (isinstance(val, float) and pd.isna(val)): return []
+    try:
+        parsed = json.loads(val) if isinstance(val, str) else val
+        if isinstance(parsed, list) and all(isinstance(x, dict) for x in parsed):
+            return parsed
+    except Exception:
+        pass
+    return []
+
+def _render_counterfactuals(changes: list[dict]) -> str:
+    valid = [d for d in changes if isinstance(d.get("cf"), (int, float)) and d["cf"] < 10]
+    valid.sort(key=lambda d: d["cf"])
+    if not valid:
+        return "No valid counterfactual"
+    return "<ul style='margin:0;padding-left:18px;'>" + "".join(
+        f"<li>{d.get('feature','?')}: {d['cf']}</li>" for d in valid
+    ) + "</ul>"
+
+@st.cache_data(show_spinner=False)
+def _load_counterfactuals_csv(cfg: Dict) -> pd.DataFrame:
+    path = cfg.get("path", "data/counterfactuals.csv")
+    delim = cfg.get("delimiter", ",")
+    return pd.read_csv(path, delimiter=delim)
+
+
+
+#----- UI Components
 def header(title: str, subtitle: str | None = None):
     st.title(title)
     if subtitle:
@@ -425,11 +539,13 @@ def _render_counterfactuals(changes: list[dict]) -> str:
     ) + "</ul>"
 
 
-def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.DataFrame) -> None:
+
+
+def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.DataFrame, lime_df: pd.DataFrame) -> None:
     """
     Show Counterfactuals:
-      - Tier comes from nodes_df (lookup by selected_id).
-      - Only read/display top_changes from data.counterfactuals CSV.
+    - Tier comes from nodes_df (lookup by selected_id).
+    - Only read/display top_changes from data.counterfactuals CSV.
     """
     st.markdown("#### Counterfactuals")
 
@@ -490,6 +606,7 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
     # Render
     c1, c2 = st.columns([1, 2])
     with c1:
+        st.caption("DiCE")
         st.markdown(f"**Current:** { _normalize_tier(tier_val) or '—' }")
         st.markdown(f"**Desired:** { desired_tier }")
         st.markdown("**Top changes:**")
@@ -497,8 +614,203 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
     with c2:
         # st.markdown("**Top changes:**")
         # st.markdown(_render_counterfactuals(all_changes), unsafe_allow_html=True)
-        st.caption("Space for LIME.")
+        st.caption("**LIME explanation (model from pickle):**")
 
+        # LIME config
+        lime_cfg     = (cfg or {}).get("data", {}).get("lime", {}) or {}
+        model_path   = lime_cfg.get("path")
+        feature_cols = lime_cfg.get("feature_cols", [])
+
+        if not model_path:
+            st.caption("Configure `data.lime.path` in data_config.yaml to enable LIME.")
+            return
+
+        # If feature_cols not specified in YAML, try model.feature_names_in_
+        if not feature_cols:
+            try:
+                model_tmp = _load_pickle_model(model_path)
+                if hasattr(model_tmp, "feature_names_in_"):
+                    feature_cols = list(map(str, model_tmp.feature_names_in_))
+            except Exception:
+                pass
+
+        if not feature_cols:
+            st.caption("Configure `data.lime.feature_cols` or provide model.feature_names_in_.")
+            return
+
+        missing = [c for c in feature_cols if c not in lime_df.columns]
+        if missing:
+            st.error(f"These LIME features are not in nodes CSV: {missing}")
+            return
+
+        # Background strictly from nodes_df
+
+        bg_src = lime_df[feature_cols].dropna()
+        if bg_src.empty:
+            st.caption("Not enough background rows (NaNs in nodes CSV).")
+            return
+        bg = bg_src.sample(min(3000, len(bg_src)), random_state=42)
+        bg_key = _hash_background(bg)
+
+        mask = lime_df["location_id"].astype(str) == str(selected_id)
+        row_sel = lime_df.loc[mask, :]
+
+        if row_sel.empty:
+            st.error(f"No row found in nodes CSV for location_id={selected_id}")
+            return
+
+        if len(row_sel) > 1:
+            st.warning(f"Multiple rows found for location_id={selected_id}, using the first one.")
+            row_sel = row_sel.iloc[[0]]   # keep as DataFrame with 1 row
+
+        # Ensure the selected row has no NaNs in the required features
+        row_sel = row_sel.iloc[0][feature_cols]
+        if row_sel.isna().any():
+            nan_cols = row_sel.index[row_sel.isna()].tolist()
+            st.error(f"Selected node has NaN(s) for some LIME features. {selected_id} {nan_cols}")
+            st.write("Selected row for LIME:", row_sel)
+            return
+
+        try:
+            model = _load_pickle_model(model_path)
+        except Exception as e:
+            st.error(f"Model load failed: {e}")
+            return
+
+        mode = _detect_mode(model)
+        class_names = lime_cfg.get("label_names", None)
+        cat_features = lime_cfg.get("categorical_features", None)
+
+        try:
+            explainer = _build_lime_explainer(
+                background_df=bg,
+                feature_cols=feature_cols,
+                class_names=class_names,
+                categorical_features=cat_features,
+                mode=mode,
+                _bg_key=bg_key,
+            )
+        except ModuleNotFoundError:
+            st.error("LIME is not installed. Run: `uv pip install lime`")
+            return
+
+        try:
+            exp, label_idx = _lime_explain_row(
+                model=model,
+                explainer=explainer,
+                row=row_sel,                  # <- row from nodes_df
+                feature_cols=feature_cols,
+                num_features=10,
+            )
+            pairs = exp.as_list(label=label_idx) if label_idx is not None else exp.as_list()
+            wdf = pd.DataFrame(pairs, columns=["Feature (range/condition)", "Weight"])
+            st.dataframe(wdf, hide_index=True, use_container_width=True)
+
+            with st.expander("HTML view", expanded=False):
+                st.components.v1.html(
+                    exp.as_html(label=label_idx) if label_idx is not None else exp.as_html(),
+                    height=600, scrolling=True
+                )
+        except Exception as e:
+            st.error(f"LIME failed: {e}")
+                    
     if matches.empty:
         st.caption("No matching counterfactual rows found for this node.")
+
+
+@st.cache_resource(show_spinner=False)
+def _load_pickle_model(model_path: str):
+    p = pathlib.Path(model_path)
+    if not p.exists():
+        raise FileNotFoundError(f"Model file not found: {p}")
+    with p.open("rb") as f:
+        obj = pickle.load(f)
+
+    # If pickle contains a dict, extract the model
+    if isinstance(obj, dict):
+        # adjust the key to match how you saved it
+        if "model" in obj:
+            return obj["model"]
+        else:
+            raise ValueError(f"Pickle contains a dict but no 'model' key. Keys: {list(obj.keys())}")
+
+    return obj
+
+# def _load_pickle_model(model_path: str):
+#     p = pathlib.Path(model_path)
+#     if not p.exists():
+#         raise FileNotFoundError(f"Model file not found: {p}")
+#     with p.open("rb") as f:
+#         return pickle.load(f)
+
+def _detect_mode(model) -> str:
+    return "classification" if hasattr(model, "predict_proba") else "regression"
+
+def _predict_fn_for(model):
+    # function mapping ndarray/DataFrame -> ndarray for LIME
+    if hasattr(model, "predict_proba"):
+        return lambda X: model.predict_proba(X)
+    return lambda X: np.atleast_2d(model.predict(X)).reshape(-1, 1)
+
+def _hash_background(df: pd.DataFrame) -> str:
+    # small stable cache key for background sample
+    h = hashlib.md5()
+    h.update(str(df.shape).encode())
+    h.update(",".join(df.columns).encode())
+    # include head few rows to invalidate if data changed a lot
+    h.update(pd.util.hash_pandas_object(df.head(50), index=False).values.tobytes())
+    return h.hexdigest()
+
+@st.cache_resource(show_spinner=False)
+def _build_lime_explainer(
+    background_df: pd.DataFrame,
+    feature_cols: Sequence[str],
+    class_names: Optional[Sequence[str]],
+    categorical_features: Optional[Sequence[str]],
+    mode: str,
+    _bg_key: str,   # cache key derived from background to avoid huge pickles
+):
+    from lime.lime_tabular import LimeTabularExplainer  # import here to fail gracefully
+    X_bg = background_df[feature_cols].to_numpy()
+
+    cat_idx = None
+    if categorical_features:
+        name_to_idx = {n: i for i, n in enumerate(feature_cols)}
+        cat_idx = [name_to_idx[n] for n in categorical_features if n in name_to_idx]
+
+    explainer = LimeTabularExplainer(
+        training_data=X_bg,
+        feature_names=list(feature_cols),
+        class_names=list(class_names) if class_names is not None else None,
+        categorical_features=cat_idx,
+        mode=mode,
+        discretize_continuous=True,
+        random_state=42,
+        verbose=False,
+    )
+    return explainer
+
+def _lime_explain_row(
+    model,
+    explainer,
+    row: pd.Series,
+    feature_cols: Sequence[str],
+    num_features: int = 10,
+    top_labels: int = 1,
+):
+    # Choose label to explain (for classifiers)
+    label_to_explain = None
+    if hasattr(model, "predict_proba"):
+        probs = _predict_fn_for(model)(row[feature_cols].to_frame().T)
+        label_to_explain = int(np.argmax(probs, axis=1)[0])
+
+    x = row[feature_cols].to_numpy()
+    exp = explainer.explain_instance(
+        data_row=x,
+        predict_fn=lambda X: _predict_fn_for(model)(pd.DataFrame(X, columns=feature_cols)),
+        num_features=num_features,
+        top_labels=top_labels,
+        labels=[label_to_explain] if label_to_explain is not None else None,
+    )
+    return exp, label_to_explain
 

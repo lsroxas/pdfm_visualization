@@ -92,7 +92,7 @@ def render_map(
         location=[lat0, lon0],
         zoom_start=z0,
         tiles="CartoDB positron",
-        control_scale=True,
+        control_scale=False,
         prefer_canvas=True,
     )
 
@@ -150,3 +150,5 @@ def render_map(
         key="map_only",
         returned_objects=[],
     )
+
+
