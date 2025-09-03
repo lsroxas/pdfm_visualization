@@ -17,5 +17,7 @@ Requires-Dist: pre-commit>=3.7
 Requires-Dist: ruff>=0.5
 Requires-Dist: pydeck>=0.9
 Requires-Dist: PyYAML>=6.0
+Requires-Dist: folium>=0.20.0
+Requires-Dist: streamlit-folium>=0.25.1
 
 # Streamlit Network Explorer\n\nVisualize ~1,700-node graphs, click nodes for details, and highlight neighbors.\n

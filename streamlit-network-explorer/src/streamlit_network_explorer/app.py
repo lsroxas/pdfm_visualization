@@ -73,8 +73,14 @@ def main():
                 neighbor_node_color_hex=NEIGHBOR_COLOR_HEX,
             )
 
+    ## The Map Render
     with tabs[0]:
         from streamlit_network_explorer.map_view import render_map, render_legend
+
+        picked = ui_components.node_picker(G, state.get_selected_node())
+        if picked:
+            state.set_selected_node(picked)
+        
 
         col_map, col_legend = st.columns([4, 1], gap="large")
         
@@ -86,14 +92,17 @@ def main():
                 height=opts.canvas_height,
                 initial_zoom=5.0,
                 philippines_center=(12.8797, 121.7740),
-                tooltip_fields=map_fields
+                tooltip_fields=map_fields,
+                center_on_node=state.get_selected_node(),
+                zoom_on_center=8.5,
             )
         
         with col_legend:
             render_legend()
 
+
+    # ui_components.tips_footer()
     ui_components.node_details_panel(G, state.get_selected_node(), opts)
-    ui_components.tips_footer()
 
 if __name__ == "__main__":
     main()
