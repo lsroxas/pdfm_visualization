@@ -31,12 +31,15 @@ def main():
     left, right = st.columns([1, 3], gap="large")
 
     with left:
+        # NEW: filters
+        node_types, edge_types = ui_components.filters_panel(nodes_df, edges_df)
+
         picked = ui_components.node_picker(nodes_df, state.get_selected_node())
         if picked and picked != state.get_selected_node():
             state.set_selected_node(picked)
-        ui_components.legend_box()
 
         ## Add details pane
+        ui_components.legend_box()
         ui_components.node_details_panel(nodes_df, state.get_selected_node()) 
         
         st.caption(f"Loaded nodes: {len(nodes_df):,} | edges: {len(edges_df):,}")
@@ -49,6 +52,8 @@ def main():
             height=720,
             initial_zoom=5.0,
             philippines_center=(12.8797, 121.7740),
+            node_types_filter=node_types,   # <-- pass filters
+            edge_types_filter=edge_types,   
         )
 
 if __name__ == "__main__":

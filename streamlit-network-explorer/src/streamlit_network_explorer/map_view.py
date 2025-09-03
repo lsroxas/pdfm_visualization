@@ -9,7 +9,7 @@ from streamlit_folium import st_folium
 
 NODE_COLORS = {
     "province": "#EA4E4E",
-    "municipality": "#B4B4B4",
+    "municipality": "#0E00A6",
     "default": "#FF7F0E",
 }
 
@@ -21,9 +21,9 @@ EDGE_COLORS = {
 }
 
 NODE_RADIUS = {
-    "province": 8,
-    "municipality": 4,
-    "default": 6,
+    "province": 20,
+    "municipality": 10,
+    "default": 50,
 }
 
 def _autocenter(nodes_df: pd.DataFrame, fallback_center: Tuple[float, float], fallback_zoom: float):
@@ -47,10 +47,34 @@ def render_map(
     height: int = 700,
     initial_zoom: float = 5.0,
     philippines_center: Tuple[float, float] = (12.8797, 121.7740),
+    node_types_filter: Optional[list[str]] = None,   # for node filtering
+    edge_types_filter: Optional[list[str]] = None,   # for edge filtering
 ):
     if nodes_df.empty:
         st.warning("No nodes to render.")
         return
+
+    # --- Apply filters ---
+    nd = nodes_df.copy()
+    if node_types_filter and "location_type" in nd.columns:
+        nd = nd[nd["location_type"].astype(str).str.lower().isin(
+            [t.lower() for t in node_types_filter]
+        )].copy()
+
+    ed = edges_df.copy()
+    if edge_types_filter and "type" in ed.columns:
+        ed = ed[ed["type"].astype(str).str.lower().isin(
+            [t.lower() for t in edge_types_filter]
+        )].copy()
+
+    # Drop edges whose endpoints are no longer present after node filter
+    if not nd.empty and not ed.empty:
+        valid_ids = set(nd["id"].astype(str))
+        ed = ed[ed["source"].astype(str).isin(valid_ids) & ed["target"].astype(str).isin(valid_ids)].copy()
+
+    # Use filtered frames from here on
+    nodes_df = nd
+    edges_df = ed
 
     lat0, lon0, z0 = _autocenter(nodes_df, philippines_center, initial_zoom)
 

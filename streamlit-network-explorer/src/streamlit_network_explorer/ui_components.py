@@ -3,6 +3,9 @@ from __future__ import annotations
 import streamlit as st
 import pandas as pd
 
+# For details pane
+from typing import Any, Dict, Iterable, Tuple, List
+
 def header(title: str, subtitle: str | None = None):
     st.title(title)
     if subtitle:
@@ -60,11 +63,6 @@ def legend_box():
 
 # For details pane
 
-from typing import Any, Dict
-import pandas as pd
-import streamlit as st
-
-
 def _get_first_present(row: pd.Series, keys: list[str], default: str = "—") -> Any:
     for k in keys:
         if k in row.index and pd.notna(row[k]) and row[k] != "":
@@ -115,3 +113,49 @@ def node_details_panel(nodes_df: pd.DataFrame, selected_id: str | None) -> None:
     # Optionally show a tiny raw record expander for debugging
     with st.expander("Raw record", expanded=False):
         st.write(r.to_dict())
+
+def filters_panel(
+    nodes_df: pd.DataFrame,
+    edges_df: pd.DataFrame,
+    key_prefix: str = "filters",
+) -> Tuple[List[str], List[str]]:
+    """
+    Render multiselects for node types and edge types. Returns (node_types, edge_types).
+    Defaults select all available types on first render.
+    """
+    st.markdown("#### Filters")
+
+    # Detect available types
+    node_types = sorted(
+        nodes_df["location_type"].dropna().astype(str).str.lower().unique().tolist()
+    ) if "location_type" in nodes_df.columns else []
+
+    edge_types = sorted(
+        edges_df["type"].dropna().astype(str).str.lower().unique().tolist()
+    ) if "type" in edges_df.columns else []
+
+    # Session defaults: select all on first run
+    n_key = f"{key_prefix}_node_types"
+    e_key = f"{key_prefix}_edge_types"
+    if n_key not in st.session_state:
+        st.session_state[n_key] = node_types[:]  # all
+    if e_key not in st.session_state:
+        st.session_state[e_key] = edge_types[:]  # all
+
+    picked_nodes = st.multiselect(
+        "Node types",
+        options=node_types,
+        default=st.session_state[n_key],
+        help="Choose which node types to show",
+        key=n_key,  # persist selection
+    )
+
+    picked_edges = st.multiselect(
+        "Edge types",
+        options=edge_types,
+        default=st.session_state[e_key],
+        help="Choose which edge types to show",
+        key=e_key,  # persist selection
+    )
+
+    return picked_nodes, picked_edges
