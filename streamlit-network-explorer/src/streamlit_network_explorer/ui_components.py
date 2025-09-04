@@ -16,29 +16,51 @@ import numpy as np
 import xgboost
 
 # ---- model + lime utils -----------------------------------------------------
-
-@st.cache_resource(show_spinner=True)
-def _load_pickle_model(model_path: str):
+@st.cache_resource(show_spinner=False)
+def _load_pickle_bundle(model_path: str):
+    """Load your pickle bundle: expect a dict with at least a 'model' key."""
     p = pathlib.Path(model_path)
     if not p.exists():
         raise FileNotFoundError(f"Model file not found: {p}")
     with p.open("rb") as f:
-        return pickle.load(f)
+        obj = pickle.load(f)
+    if isinstance(obj, dict) and "model" in obj:
+        return obj
+    if isinstance(obj, dict):
+        raise ValueError(f"Pickle contains a dict but no 'model' key. Keys: {list(obj.keys())}")
+    # Fallback: user pickled the model directly
+    return {"model": obj, "feature_names": getattr(obj, "feature_names_in_", None), "label_map": None}
 
 def _detect_mode(model) -> str:
     return "classification" if hasattr(model, "predict_proba") else "regression"
 
-def _predict_fn_for(model):
-    if hasattr(model, "predict_proba"):
-        return lambda X: model.predict_proba(X)
-    return lambda X: np.atleast_2d(model.predict(X)).reshape(-1, 1)
-
 def _hash_background(df: pd.DataFrame) -> str:
     h = hashlib.md5()
     h.update(str(df.shape).encode())
-    h.update(",".join(df.columns).encode())
-    h.update(pd.util.hash_pandas_object(df.head(50), index=False).values.tobytes())
+    h.update(",".join(map(str, df.columns)).encode())
+    if not df.empty:
+        h.update(pd.util.hash_pandas_object(df.head(50), index=False).values.tobytes())
     return h.hexdigest()
+
+def _safe_predict_fn(model, feature_cols: Sequence[str]):
+    """Ensure X arrives with correct shape & columns for model.predict(_proba)."""
+    n_feat = len(feature_cols)
+    def _to_frame(X):
+        if isinstance(X, pd.DataFrame):
+            return X.loc[:, feature_cols]
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        if X.shape[1] != n_feat:
+            raise ValueError(f"predict_fn received {X.shape[1]} features, expected {n_feat}.")
+        return pd.DataFrame(X, columns=feature_cols)
+    def _predict(X):
+        Xf = _to_frame(X)
+        if hasattr(model, "predict_proba"):
+            return model.predict_proba(Xf)
+        y = model.predict(Xf)
+        return y if y.ndim == 1 else y.reshape(-1)
+    return _predict
 
 @st.cache_resource(show_spinner=False)
 def _build_lime_explainer(
@@ -47,7 +69,7 @@ def _build_lime_explainer(
     class_names: Optional[Sequence[str]],
     categorical_features: Optional[Sequence[str]],
     mode: str,
-    _bg_key: str,   # cache key
+    _bg_key: str,
 ):
     from lime.lime_tabular import LimeTabularExplainer
     X_bg = background_df[feature_cols].to_numpy()
@@ -614,79 +636,109 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
     with c2:
         # st.markdown("**Top changes:**")
         # st.markdown(_render_counterfactuals(all_changes), unsafe_allow_html=True)
-        st.caption("**LIME explanation (model from pickle):**")
+        st.caption("**LIME explanation:**")
 
-        # LIME config
-        lime_cfg     = (cfg or {}).get("data", {}).get("lime", {}) or {}
-        model_path   = lime_cfg.get("path")
-        feature_cols = lime_cfg.get("feature_cols", [])
+        # --- LIME explanation (model from pickle; features from nodes CSV) ---
+        lime_cfg   = (cfg or {}).get("data", {}).get("lime", {}) or {}
+        model_path = lime_cfg.get("path")
 
         if not model_path:
             st.caption("Configure `data.lime.path` in data_config.yaml to enable LIME.")
             return
 
-        # If feature_cols not specified in YAML, try model.feature_names_in_
-        if not feature_cols:
-            try:
-                model_tmp = _load_pickle_model(model_path)
-                if hasattr(model_tmp, "feature_names_in_"):
-                    feature_cols = list(map(str, model_tmp.feature_names_in_))
-            except Exception:
-                pass
-
-        if not feature_cols:
-            st.caption("Configure `data.lime.feature_cols` or provide model.feature_names_in_.")
-            return
-
-        missing = [c for c in feature_cols if c not in lime_df.columns]
-        if missing:
-            st.error(f"These LIME features are not in nodes CSV: {missing}")
-            return
-
-        # Background strictly from nodes_df
-
-        bg_src = lime_df[feature_cols].dropna()
-        if bg_src.empty:
-            st.caption("Not enough background rows (NaNs in nodes CSV).")
-            return
-        bg = bg_src.sample(min(3000, len(bg_src)), random_state=42)
-        bg_key = _hash_background(bg)
-
-        mask = lime_df["location_id"].astype(str) == str(selected_id)
-        row_sel = lime_df.loc[mask, :]
-
-        if row_sel.empty:
-            st.error(f"No row found in nodes CSV for location_id={selected_id}")
-            return
-
-        if len(row_sel) > 1:
-            st.warning(f"Multiple rows found for location_id={selected_id}, using the first one.")
-            row_sel = row_sel.iloc[[0]]   # keep as DataFrame with 1 row
-
-        # Ensure the selected row has no NaNs in the required features
-        row_sel = row_sel.iloc[0][feature_cols]
-        if row_sel.isna().any():
-            nan_cols = row_sel.index[row_sel.isna()].tolist()
-            st.error(f"Selected node has NaN(s) for some LIME features. {selected_id} {nan_cols}")
-            st.write("Selected row for LIME:", row_sel)
-            return
-
+        # 1) Load bundle and extract model + canonical feature names
         try:
-            model = _load_pickle_model(model_path)
+            bundle = _load_pickle_bundle(model_path)  # {'model','feature_names','label_map',...}
         except Exception as e:
             st.error(f"Model load failed: {e}")
             return
 
+        model = bundle["model"]
+
+        # Priority for feature list (ORDER MATTERS)
+        if bundle.get("feature_names"):
+            feature_cols = list(map(str, bundle["feature_names"]))
+        elif hasattr(model, "feature_names_in_"):
+            feature_cols = list(map(str, model.feature_names_in_))
+        else:
+            fc = lime_cfg.get("lime_cols", [])
+            feature_cols = [c.strip() for c in fc.split(",")] if isinstance(fc, str) else list(map(str, fc))
+
+        if not feature_cols:
+            st.error("No feature list found. Provide bundle['feature_names'], model.feature_names_in_, or data.lime.feature_cols.")
+            return
+
+        # 2) Align your lime_df to EXACT columns and order (drop extras, add missings)
+        df_cols = set(lime_df.columns)
+        needed  = list(feature_cols)  # keep order
+        missing = [c for c in needed if c not in df_cols]
+        extra   = [c for c in lime_df.columns if c not in needed]
+
+        # Create missing columns with neutral values (choose what's appropriate for your model)
+        for c in missing:
+            # For numeric features, 0 is often okay; adjust if your model expects something else
+            lime_df[c] = 0
+
+        # Reindex to EXACT order; extras will be ignored by reindex
+        X_all = lime_df.reindex(columns=needed)
+
+        # Optional: basic impute/typing to avoid NaNs and dtype issues
+        num_cols = X_all.select_dtypes(include=["number"]).columns.tolist()
+        cat_cols = [c for c in needed if c not in num_cols]
+        if num_cols:
+            X_all[num_cols] = X_all[num_cols].fillna(X_all[num_cols].median())
+        if cat_cols:
+            X_all[cat_cols] = X_all[cat_cols].astype("string").fillna("missing")
+
+        # 3) Build background from the ALIGNED matrix
+        if X_all.empty:
+            st.error("Aligned LIME matrix is empty after reindexing.")
+            return
+        bg = X_all.sample(min(3000, len(X_all)), random_state=42)
+        bg_key = _hash_background(bg)
+
+        # 4) Find the selected row using an ID column PRESENT in lime_df
+        id_candidates = [
+            (cfg or {}).get("data", {}).get("nodes", {}).get("id_col"),
+            (cfg or {}).get("data", {}).get("counterfactuals", {}).get("id_col"),
+            "location_id", "Location_ID", "id", "node_id", "Node_ID",
+        ]
+        id_col_lime = next((c for c in id_candidates if c and c in lime_df.columns), None)
+        if not id_col_lime:
+            st.error("Could not find an ID column in lime_df to match the selected node.")
+            return
+
+        sid = str(selected_id).strip().casefold()
+        ids_norm = lime_df[id_col_lime].astype(str).str.strip().str.casefold()
+        row_df = X_all.loc[ids_norm == sid]
+
+        if row_df.empty:
+            st.error(f"No row matched selected_id={selected_id!r} via {id_col_lime!r}.")
+            st.caption("Tip: ensure your node picker emits the same ID used in the lime_df ID column.")
+            return
+        if len(row_df) > 1:
+            st.warning(f"Multiple rows matched {selected_id!r}; using the first.")
+            row_df = row_df.iloc[[0]]
+
+        row_series = row_df.iloc[0]  # <- EXACT same columns & order as feature_cols
+
+        # 5) Build explainer and a shape-safe predict_fn
         mode = _detect_mode(model)
         class_names = lime_cfg.get("label_names", None)
-        cat_features = lime_cfg.get("categorical_features", None)
+        if class_names is None and isinstance(bundle.get("label_map"), dict):
+            try:
+                inv = {v: k for k, v in bundle["label_map"].items()}
+                class_names = [inv[i] for i in sorted(inv)]
+            except Exception:
+                pass
 
+        categorical_features = lime_cfg.get("categorical_features", None)
         try:
             explainer = _build_lime_explainer(
                 background_df=bg,
                 feature_cols=feature_cols,
                 class_names=class_names,
-                categorical_features=cat_features,
+                categorical_features=categorical_features,
                 mode=mode,
                 _bg_key=bg_key,
             )
@@ -694,14 +746,23 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
             st.error("LIME is not installed. Run: `uv pip install lime`")
             return
 
+        predict_fn = _safe_predict_fn(model, feature_cols)
+
+        # 6) Run LIME on the ALIGNED one-row instance
         try:
-            exp, label_idx = _lime_explain_row(
-                model=model,
-                explainer=explainer,
-                row=row_sel,                  # <- row from nodes_df
-                feature_cols=feature_cols,
+            label_idx = None
+            if hasattr(model, "predict_proba"):
+                proba = predict_fn(row_series.to_numpy())
+                label_idx = int(np.argmax(proba, axis=1)[0])
+
+            exp = explainer.explain_instance(
+                data_row=row_series.to_numpy(),   # 1D array, EXACT order
+                predict_fn=predict_fn,
                 num_features=10,
+                top_labels=1,
+                labels=[label_idx] if label_idx is not None else None,
             )
+
             pairs = exp.as_list(label=label_idx) if label_idx is not None else exp.as_list()
             wdf = pd.DataFrame(pairs, columns=["Feature (range/condition)", "Weight"])
             st.dataframe(wdf, hide_index=True, use_container_width=True)
@@ -712,7 +773,8 @@ def counterfactuals_panel(cfg: Dict, selected_id: Optional[str], nodes_df: pd.Da
                     height=600, scrolling=True
                 )
         except Exception as e:
-            st.error(f"LIME failed: {e}")
+            # st.error(f"LIME failed: {e}")
+            st.error("LIME failed: Unable to load model.")
                     
     if matches.empty:
         st.caption("No matching counterfactual rows found for this node.")
