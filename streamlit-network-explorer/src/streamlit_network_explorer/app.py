@@ -43,7 +43,7 @@ def main():
         ui_components.legend_box()
         ui_components.node_details_panel(nodes_df, state.get_selected_node()) 
         
-        # st.caption(f"Loaded nodes: {len(nodes_df):,}")
+        st.caption(f"Loaded nodes: {len(nodes_df):,}")
 
     with right:
         render_map(

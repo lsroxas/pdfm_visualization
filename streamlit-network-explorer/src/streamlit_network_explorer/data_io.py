@@ -14,17 +14,10 @@ def _get(d: Dict, key: str, default: str) -> str:
 def load_lime_input_data(cfg: dict) -> Tuple[pd.DataFrame, pd.DataFrame]:
     lime_config = cfg['data']['lime']
     input_file = lime_config.get('datasource', 'data/lime_input.csv')
-    pdfm_file = lime_config.get('pdfmembeddings', 'data/pdfm_all.csv')
     feature_cols = lime_config.get('feature_cols', [])
-    pdfm_cols = lime_config.get('pdfm_cols', [])
-    lime_cols = lime_config.get('lime_cols', [])
     label_names = lime_config.get('label_names', [])
-    df = pd.read_csv(input_file).fillna(0)
-    df_pdfm = pd.read_csv(pdfm_file).fillna(0)
-    df_merged = pd.merge(df, df_pdfm, on='location_id', how='left')
-    # print(df_merged[lime_cols].columns.tolist())
-    # return df_merged[lime_cols]
-    return df_merged
+    df = pd.read_csv(input_file, usecols=feature_cols).fillna(0)
+    return df
 
 def load_nodes_edges(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     dnodes = cfg["data"]["nodes"]
