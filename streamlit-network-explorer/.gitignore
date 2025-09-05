@@ -1,5 +1,5 @@
 .venv/
-__pycache__/
+src/streamlit_network_explorer/__pycache__/
 *.pyc
 .env
 .DS_Store
