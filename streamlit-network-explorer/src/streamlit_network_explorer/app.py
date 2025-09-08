@@ -7,8 +7,15 @@ from streamlit_network_explorer.data_io import load_nodes_edges, load_lime_input
 from streamlit_network_explorer import state
 from streamlit_network_explorer import ui_components
 from streamlit_network_explorer.map_view import render_map
+from streamlit_network_explorer.logging_setup import setup_logging
+import logging 
 
 def main():
+
+    setup_logging()
+
+    logging.info("Starting Streamlit app")
+
     st.set_page_config(page_title="DKSH Market Expansion Services", layout="wide")
 
     ui_components.header(
@@ -18,6 +25,7 @@ def main():
 
     try:
         cfg = load_config()
+        logging.info(f"Loaded config: {cfg}")
     except Exception as e:
         st.error(f"Failed to load data config: {e}")
         return
@@ -62,5 +70,7 @@ def main():
 
         # Counterfactuals pane 
         ui_components.counterfactuals_panel(cfg, state.get_selected_node(), nodes_df, lime_df)
+
+
 if __name__ == "__main__":
     main()

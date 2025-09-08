@@ -6,6 +6,8 @@ import pandas as pd
 
 from .file_config import load_config
 
+import logging 
+
 def _get(d: Dict, key: str, default: str) -> str:
     v = d.get(key, default)
     return str(v) if v is not None else default
